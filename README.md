@@ -86,11 +86,7 @@ python main.py
 2. Ouvrez une image capturée
 3. Visualisez les informations extraites
 
-## Tests
 
-```bash
-python -m pytest tests/ -v
-```
 
 ## Paramètres
 
@@ -137,6 +133,3 @@ Modifiez `config.py` pour personnaliser :
 
 Activez le mode RGPD dans `config.py` (`GDPR_MODE = True`) pour automatiquement flouter les visages non reconnus.
 
-## License
-
-Projet académique - Hamdi Chebbi - ING-4-SSIRF
