@@ -194,22 +194,14 @@ class VerificationDialog:
         self._verify_watermark()
     
     def _display_image(self, image):
-        """Affiche l'image via buffer binaire SANS PIL."""
+        """Affiche l'image avec PIL."""
         try:
-            import io
-            
             display = cv2.resize(image, (400, 300))
-            
-            encode_param = [cv2.IMWRITE_JPEG_QUALITY, 85]
-            _, encoded = cv2.imencode('.jpg', display, encode_param)
-            
-            buffer = io.BytesIO(encoded.tobytes())
-            photo = tk.PhotoImage(data=buffer.getvalue())
+            rgb = cv2.cvtColor(display, cv2.COLOR_BGR2RGB)
+            img_pil = Image.fromarray(rgb)
+            photo = ImageTk.PhotoImage(img_pil)
             
             self.image_label.imgtk = photo
-            self.image_label.configure(image=photo)
-        except Exception as e:
-            logger.error(f"Erreur affichage image: {e}")
             self.image_label.configure(image=photo)
         except Exception as e:
             logger.error(f"Erreur affichage image: {e}")

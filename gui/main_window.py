@@ -330,12 +330,42 @@ class SurveillanceWindow:
         persons = self.db_manager.get_all_persons()
         list_window = tk.Toplevel(self.root)
         list_window.title("Personnes")
-        list_window.geometry("400x300")
-        tk.Label(list_window, text=f"{len(persons)} personne(s)", font=('Arial', 14)).pack()
+        list_window.geometry("500x400")
+        list_window.configure(bg='#2b2b2b')
+        
+        tk.Label(list_window, text=f"{len(persons)} personne(s)", font=('Arial', 14, 'bold'),
+                 bg='#2b2b2b', fg='white').pack(pady=10)
+        
+        persons_frame = tk.Frame(list_window, bg='#2b2b2b')
+        persons_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
         for p in persons:
+            frame = tk.Frame(persons_frame, bg='#1a1a1a')
+            frame.pack(fill='x', pady=2)
+            
             status = "✓" if p['authorized'] else "✗"
-            tk.Label(list_window, text=f"{status} {p['name']}").pack()
-        tk.Button(list_window, text="Fermer", command=list_window.destroy).pack()
+            status_color = '#00ff00' if p['authorized'] else '#ff0000'
+            
+            tk.Label(frame, text=f"{status} {p['name']}", bg='#1a1a1a', fg='white',
+                     font=('Arial', 11)).pack(side='left', padx=10, pady=5)
+            
+            def delete_person(person_name=p['name']):
+                confirm = messagebox.askyesno("Confirmation", f"Supprimer la personne '{person_name}' ?")
+                if confirm:
+                    result = self.db_manager.delete_person_by_name(person_name)
+                    if result:
+                        messagebox.showinfo("Succès", f"{person_name} supprimé!")
+                        self.recognizer.train(self.db_manager)
+                        list_window.destroy()
+                        self.show_persons_list()
+                    else:
+                        messagebox.showerror("Erreur", f"Impossible de supprimer {person_name}")
+            
+            tk.Button(frame, text="Supprimer", command=delete_person,
+                      bg='#e81123', fg='white', font=('Arial', 10)).pack(side='right', padx=10, pady=5)
+        
+        tk.Button(list_window, text="Fermer", command=list_window.destroy,
+                  bg='#666666', fg='white', font=('Arial', 11)).pack(pady=10)
     
     def export_logs(self):
         path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")])

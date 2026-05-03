@@ -33,7 +33,6 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            # Vérifie si la table 'persons' existe
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='persons';")
             exists = cursor.fetchone()
             if not exists:
@@ -49,39 +48,29 @@ class DatabaseManager:
             raise
     
     def add_person(self, name, authorized=False, face_encoding=None):
+        """Ajoute ou met à jour une personne dans la base de données."""
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            encoding_blob = pickle.dumps(face_encoding) if face_encoding is not None else None
-            cursor.execute("""
-                INSERT OR REPLACE INTO persons (name, authorized, face_encoding)
-                VALUES (?, ?, ?)
-            """, (name, authorized, encoding_blob))
-            conn.commit()
-            conn.close()
-            logger.info(f"Personne ajoutée/mise à jour: {name}")
-        except Exception as e:
-            logger.error(f"Erreur lors de l'ajout de la personne: {e}")
-            raise
-            cursor = conn.cursor()
             
-            # Vérifier si la personne existe déjà
             cursor.execute("SELECT id, image_count FROM persons WHERE name = ?", (name,))
             existing = cursor.fetchone()
             
             if existing:
                 person_id = existing[0]
+                encoding_blob = pickle.dumps(face_encoding) if face_encoding is not None else None
                 cursor.execute("""
                     UPDATE persons 
                     SET authorized = ?, enrolled_at = CURRENT_TIMESTAMP, 
                         face_encoding = ?, image_count = image_count + 1
                     WHERE id = ?
-                """, (authorized, pickle.dumps(face_encoding) if face_encoding else None, person_id))
+                """, (authorized, encoding_blob, person_id))
             else:
+                encoding_blob = pickle.dumps(face_encoding) if face_encoding is not None else None
                 cursor.execute("""
                     INSERT INTO persons (name, authorized, face_encoding)
                     VALUES (?, ?, ?)
-                """, (name, authorized, pickle.dumps(face_encoding) if face_encoding else None))
+                """, (name, authorized, encoding_blob))
                 person_id = cursor.lastrowid
             
             conn.commit()
@@ -332,6 +321,24 @@ class DatabaseManager:
             return True
         except Exception as e:
             logger.error(f"Erreur suppression: {e}")
+            return False
+    
+    def delete_person_by_name(self, name):
+        """Supprime une personne de la base de données par son nom."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM persons WHERE name = ?", (name,))
+            conn.commit()
+            deleted = cursor.rowcount
+            conn.close()
+            if deleted:
+                logger.info(f"Personne supprimée: {name}")
+            else:
+                logger.warning(f"Aucune personne trouvée à supprimer: {name}")
+            return deleted > 0
+        except Exception as e:
+            logger.error(f"Erreur lors de la suppression de la personne: {e}")
             return False
     
     def camera_exists(self, camera_id):

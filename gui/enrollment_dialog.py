@@ -85,11 +85,31 @@ class EnrollmentDialog:
                 bg='#e81123', fg='white', width=14, state='disabled')
         self.train_btn.grid(row=0, column=2, padx=3)
         
+        self.delete_btn = tk.Button(buttons, text="Supprimer", command=self.delete_person,
+            bg='#ff8800', fg='white', width=14)
+        self.delete_btn.grid(row=0, column=3, padx=3)
+
         tk.Button(buttons, text="Fermer", command=self.close,
-                bg='#666666', fg='white', width=14).grid(row=0, column=3, padx=3)
+            bg='#666666', fg='white', width=14).grid(row=0, column=4, padx=3)
         
         self.status = tk.Label(self.window, text="Prêt", bg='#2b2b2b', fg='#00ff00')
         self.status.pack(pady=5)
+    
+    def delete_person(self):
+        name = self.name_entry.get().strip()
+        if not name:
+            messagebox.showerror("Erreur", "Entrez un nom à supprimer")
+            return
+        confirm = messagebox.askyesno("Confirmation", f"Supprimer la personne '{name}' ?")
+        if not confirm:
+            return
+        result = self.db_manager.delete_person_by_name(name)
+        if result:
+            self.status.config(text=f"{name} supprimé!", fg='#ff8800')
+            messagebox.showinfo("Succès", f"{name} supprimé!")
+            self.name_entry.delete(0, tk.END)
+        else:
+            messagebox.showerror("Erreur", f"Impossible de supprimer {name} (non trouvé)")
     
     def _frame_to_photoimage(self, frame):
         """Convertit un frame OpenCV en PhotoImage via Pillow."""
@@ -197,7 +217,7 @@ class EnrollmentDialog:
         try:
             features = self.recognizer.enroll(name, self.captured_images, self.authorized_var.get())
             
-            if features is not False:
+            if features is not None and features is not False:
                 self.db_manager.add_person(name=name, authorized=self.authorized_var.get(), face_encoding=features)
                 self.recognizer.train(self.db_manager)
                 self.status.config(text=f"{name} enregistré!", fg='#00ff00')

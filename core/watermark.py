@@ -472,11 +472,15 @@ class Watermark:
             Image tatoueée
         """
         payload = self.create_payload(camera_id, person_name, status, timestamp)
-        bits = self._bytes_to_bits(payload)
         
         if self.method == "LSB":
             return self.embed_lsb(image, payload.decode('utf-8'))
         else:
+            header = self.watermark_marker + b':' + str(len(payload)).encode() + b':'
+            full_data = header + payload
+            crc = zlib.crc32(full_data).to_bytes(4, 'big')
+            full_data_with_crc = full_data + crc
+            bits = self._bytes_to_bits(full_data_with_crc)
             return self.embed_dct(image, bits)
     
     def extract(self, image):
@@ -510,27 +514,50 @@ class Watermark:
             if not marker_found:
                 raise WatermarkError("Marqueur non trouvé")
             
-            header_bits = full_bits[data_start:data_start + 32]
-            header_bytes = self._bits_to_bytes(header_bits)
+            header_bits = []
+            colon_found = False
+            i = data_start
             
-            colon_idx = header_bytes.find(b':')
-            if colon_idx == -1:
+            while i < len(full_bits) and not colon_found:
+                byte_bits = full_bits[i:i+8]
+                i += 8
+                if len(byte_bits) < 8:
+                    break
+                bval = self._bits_to_bytes(byte_bits)
+                if bval == b':':
+                    colon_found = True
+                    break
+                header_bits.extend(byte_bits)
+            
+            if not colon_found or not header_bits:
                 raise WatermarkError("Header invalide")
             
-            msg_len = int(header_bytes[:colon_idx].decode())
-            data_start += 32 + (colon_idx + 1) * 8
+            try:
+                msg_len_str = self._bits_to_bytes(header_bits).decode()
+                msg_len = int(msg_len_str)
+            except Exception as e:
+                raise WatermarkError(f"Header invalide: {e}")
             
             total_msg_bits = msg_len * 8
-            msg_bits = full_bits[data_start:data_start + total_msg_bits]
+            msg_bits = full_bits[i:i + total_msg_bits]
+            
+            if len(msg_bits) < total_msg_bits:
+                raise WatermarkError("Message incomplet")
+            
             msg_bytes = self._bits_to_bytes(msg_bits)
             
-            data_start += total_msg_bits
-            crc_bits = full_bits[data_start:data_start + 32]
+            i += total_msg_bits
+            crc_bits = full_bits[i:i + 32]
+            
+            if len(crc_bits) < 32:
+                raise WatermarkError("CRC incomplet")
+            
             crc_bytes = self._bits_to_bytes(crc_bits)
             
-            expected_crc = zlib.crc32(msg_bytes).to_bytes(4, 'big')
+            expected_crc = zlib.crc32(self.watermark_marker + b':' + str(msg_len).encode() + b':' + msg_bytes).to_bytes(4, 'big')
+            
             if crc_bytes != expected_crc:
-                raise WatermarkError("CRC invalide")
+                raise WatermarkError("CRC invalide - corruption détectée")
             
             return self.parse_payload(msg_bytes)
     
@@ -587,24 +614,34 @@ class Watermark:
         try:
             encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
             _, encoded = cv2.imencode('.jpg', image, encode_param)
-            compressed = cv2.imdecode(encoded, cv2.IMREAD_GRAY)
+            compressed = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
             
             if compressed is None:
                 return {'ber': 1.0, 'error': 'Impossible de décompresser'}
             
-            bits_original = self.extract_dct(image) if self.method == "DCT" else self._bytes_to_bits(self.extract_lsb(image).encode())
+            bits_original = []
+            try:
+                if self.method == "DCT":
+                    bits_original = self.extract_dct(image)
+                else:
+                    msg_original = self.extract_lsb(image)
+                    bits_original = self._bytes_to_bits(msg_original.encode('utf-8'))
+            except WatermarkError as e:
+                return {'ber': 1.0, 'error': f"Extraction originale échouée: {str(e)}"}
             
-            bits_compressed = self.extract_dct(compressed) if self.method == "DCT" else []
-            if self.method == "LSB":
-                try:
-                    msg = self.extract_lsb(compressed)
-                    bits_compressed = self._bytes_to_bits(msg.encode())
-                except WatermarkError:
-                    bits_compressed = []
+            bits_compressed = []
+            try:
+                if self.method == "DCT":
+                    bits_compressed = self.extract_dct(compressed)
+                else:
+                    msg_compressed = self.extract_lsb(compressed)
+                    bits_compressed = self._bytes_to_bits(msg_compressed.encode('utf-8'))
+            except WatermarkError:
+                bits_compressed = []
             
             min_len = min(len(bits_original), len(bits_compressed))
             if min_len == 0:
-                return {'ber': 1.0, 'error': 'Extraction échouée'}
+                return {'ber': 1.0, 'error': 'Extraction compressée échouée'}
             
             errors = sum(1 for i in range(min_len) if bits_original[i] != bits_compressed[i])
             ber = errors / min_len
@@ -617,4 +654,7 @@ class Watermark:
             }
             
         except Exception as e:
+            logger.error(f"Erreur test robustesse: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {'ber': 1.0, 'error': str(e)}
