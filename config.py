@@ -6,12 +6,12 @@ CAMERA_ID = "CAM_001"
 CAMERA_SOURCE = 0  # 0 = webcam, ou chemin fichier vidéo
 
 # Reconnaissance faciale
-RECOGNITION_THRESHOLD = 0.3
+RECOGNITION_THRESHOLD = 0.5
 FACE_SIZE = (128, 128)
 
 # Tatouage numérique
-WATERMARK_METHOD = "DCT"  # "LSB" ou "DCT"
-JPEG_QUALITY = 85
+WATERMARK_METHOD = "LSB"  # "LSB" ou "DCT"
+JPEG_QUALITY = 100
 
 # Chemins
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

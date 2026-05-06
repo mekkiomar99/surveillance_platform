@@ -360,6 +360,7 @@ class Watermark:
             
             bit_idx = 0
             total_bits = len(bits_array)
+            alpha = 20
             
             for i in range(0, h_pad, 8):
                 for j in range(0, w_pad, 8):
@@ -369,15 +370,7 @@ class Watermark:
                     block = y_channel[i:i+8, j:j+8].astype(np.float64)
                     dct_block = self._dct_2d(block)
                     
-                    alpha = 10
-                    
-                    if i // 8 < 4 and j // 8 < 4:
-                        coef_idx = self._get_coefficient_index((i // 8) % 8, (j // 8) % 8)
-                        row = coef_idx // 8
-                        col = coef_idx % 8
-                    else:
-                        row = 2
-                        col = 2
+                    row, col = 4, 4
                     
                     dct_value = dct_block[row, col]
                     
@@ -432,16 +425,14 @@ class Watermark:
             w_pad = (w // 8) * 8
             
             bits = []
-            alpha = 10
+            alpha = 20
             
             for i in range(0, h_pad, 8):
                 for j in range(0, w_pad, 8):
                     block = y_channel[i:i+8, j:j+8].astype(np.float64)
                     dct_block = self._dct_2d(block)
                     
-                    coef_idx = self._get_coefficient_index((i // 8) % 8, (j // 8) % 8)
-                    row = coef_idx // 8
-                    col = coef_idx % 8
+                    row, col = 4, 4
                     
                     dct_value = dct_block[row, col]
                     
