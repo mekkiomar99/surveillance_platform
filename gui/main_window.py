@@ -311,11 +311,21 @@ class SurveillanceWindow:
             return
         try:
             watermarked = self.watermark.embed(self.current_frame.copy(), config.CAMERA_ID, "MANUEL", "unknown")
-            filename = f"manual_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+            
+            # Utiliser PNG pour LSB (sans perte) et JPG pour DCT (robuste)
+            is_lsb = config.WATERMARK_METHOD == "LSB"
+            ext = ".png" if is_lsb else ".jpg"
+            
+            filename = f"manual_{datetime.now().strftime('%Y%m%d_%H%M%S')}{ext}"
             path = os.path.join(config.CAPTURES_DIR, filename)
             os.makedirs(config.CAPTURES_DIR, exist_ok=True)
-            cv2.imwrite(path, watermarked, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            messagebox.showinfo("Succès", f"Capture: {filename}")
+            
+            if is_lsb:
+                cv2.imwrite(path, watermarked)
+            else:
+                cv2.imwrite(path, watermarked, [cv2.IMWRITE_JPEG_QUALITY, config.JPEG_QUALITY])
+                
+            messagebox.showinfo("Succès", f"Capture sauvegardée ({config.WATERMARK_METHOD}): {filename}")
         except Exception as e:
             messagebox.showerror("Erreur", str(e))
     

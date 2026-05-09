@@ -129,17 +129,23 @@ class AlertManager:
             person_safe = person_name.replace(' ', '_') if person_name else 'unknown'
             status_safe = status.replace(' ', '_')
             
-            filename = f"{timestamp}_{camera_id}_{person_safe}_{status_safe}.jpg"
+            # Utiliser PNG pour LSB (sans perte) et JPG pour DCT (robuste)
+            is_lsb = config.WATERMARK_METHOD == "LSB"
+            ext = ".png" if is_lsb else ".jpg"
+            
+            filename = f"{timestamp}_{camera_id}_{person_safe}_{status_safe}{ext}"
             filepath = os.path.join(self.captures_dir, filename)
             
-            quality = config.JPEG_QUALITY
-            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
-            _, encoded = cv2.imencode('.jpg', watermarked_frame, encode_param)
+            if is_lsb:
+                # Sauvegarde PNG sans perte
+                cv2.imwrite(filepath, watermarked_frame)
+            else:
+                # Sauvegarde JPG avec qualité configurée
+                quality = config.JPEG_QUALITY
+                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+                cv2.imwrite(filepath, watermarked_frame, encode_param)
             
-            with open(filepath, 'wb') as f:
-                f.write(encoded.tobytes())
-            
-            logger.debug(f"Capture sauvegardée: {filepath}")
+            logger.debug(f"Capture sauvegardée ({config.WATERMARK_METHOD}): {filepath}")
             return filepath
             
         except Exception as e:

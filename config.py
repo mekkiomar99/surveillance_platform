@@ -6,11 +6,11 @@ CAMERA_ID = "CAM_001"
 CAMERA_SOURCE = 0  # 0 = webcam, ou chemin fichier vidéo
 
 # Reconnaissance faciale
-RECOGNITION_THRESHOLD = 0.5
-FACE_SIZE = (128, 128)
+RECOGNITION_THRESHOLD = 0.35
+FACE_SIZE = (160, 160) # Augmenté pour capturer plus de détails HOG
 
 # Tatouage numérique
-WATERMARK_METHOD = "LSB"  # "LSB" ou "DCT"
+WATERMARK_METHOD = "DCT"  # "LSB" ou "DCT"
 JPEG_QUALITY = 100
 
 # Chemins

@@ -82,7 +82,7 @@ class Watermark:
     # ==================== MÉTHODE LSB ====================
     
     def _bits_to_bytes(self, bits):
-        """Convertit une liste de bits en bytes."""
+        """Convertit une liste de bits en bytes (Big-endian pour les bits dans l'octet)."""
         bytes_list = []
         for i in range(0, len(bits), 8):
             byte_bits = bits[i:i+8]
@@ -90,15 +90,17 @@ class Watermark:
                 byte_bits.extend([0] * (8 - len(byte_bits)))
             byte = 0
             for j, bit in enumerate(byte_bits):
-                byte |= bit << j
+                # Utiliser l'ordre standard: bit 7 est le plus significatif
+                if bit:
+                    byte |= (1 << (7 - j))
             bytes_list.append(byte)
         return bytes(bytes_list)
     
     def _bytes_to_bits(self, data):
-        """Convertit des bytes en liste de bits."""
+        """Convertit des bytes en liste de bits (Big-endian pour les bits dans l'octet)."""
         bits = []
         for byte in data:
-            for i in range(8):
+            for i in range(7, -1, -1):
                 bits.append((byte >> i) & 1)
         return bits
     
@@ -173,51 +175,43 @@ class Watermark:
             img = img.astype(np.uint8)
             h, w = img.shape
             bits = []
-            # Recherche du marqueur
-            marker_bits = []
+            # Recherche du marqueur avec fenêtre glissante
             marker_len = len(self.watermark_marker)
             marker_found = False
-            bits = []
             bit_idx = 0
+            
+            # On lit tous les bits possibles pour trouver le marqueur
+            all_bits = []
             for i in range(h):
                 for j in range(w):
-                    bit = img[i, j] & 1
-                    bits.append(bit)
-                    bit_idx += 1
-                    if len(bits) == marker_len * 8:
-                        check_bytes = self._bits_to_bytes(bits)
-                        if check_bytes == self.watermark_marker:
-                            marker_found = True
-                            break
-                if marker_found:
+                    all_bits.append(img[i, j] & 1)
+            
+            marker_bits_len = marker_len * 8
+            for i in range(len(all_bits) - marker_bits_len):
+                check_bits = all_bits[i:i + marker_bits_len]
+                check_bytes = self._bits_to_bytes(check_bits)
+                if check_bytes == self.watermark_marker:
+                    marker_found = True
+                    bit_idx = i + marker_bits_len
                     break
+                    
             if not marker_found:
                 raise WatermarkError("Marqueur non trouvé dans l'image")
+            
             # On commence la lecture du header juste après le marqueur
-            i = bit_idx
-            # Consommer le premier ':' (8 bits)
-            first_colon_bits = []
-            for _ in range(8):
-                if i >= h * w:
-                    raise WatermarkError("Header invalide (fin prématurée)")
-                row = i // w
-                col = i % w
-                first_colon_bits.append(img[row, col] & 1)
-                i += 1
-            if self._bits_to_bytes(first_colon_bits) != b':':
+            # Lecture du premier ':' (8 bits)
+            first_colon_bits = all_bits[bit_idx:bit_idx + 8]
+            bit_idx += 8
+            
+            if len(first_colon_bits) < 8 or self._bits_to_bytes(first_colon_bits) != b':':
                 raise WatermarkError("Header invalide (pas de premier ':')")
+            
             # Lecture de la taille du message (jusqu'au second ':')
             size_octets = []
             colon_found = False
-            while i < h * w:
-                byte_bits = []
-                for _ in range(8):
-                    if i >= h * w:
-                        break
-                    row = i // w
-                    col = i % w
-                    byte_bits.append(img[row, col] & 1)
-                    i += 1
+            while bit_idx < len(all_bits):
+                byte_bits = all_bits[bit_idx:bit_idx + 8]
+                bit_idx += 8
                 if len(byte_bits) < 8:
                     break
                 bval = self._bits_to_bytes(byte_bits)
@@ -225,77 +219,35 @@ class Watermark:
                     colon_found = True
                     break
                 size_octets.append(bval)
+            
             if not colon_found or not size_octets:
                 raise WatermarkError("Header invalide")
+            
             try:
                 msg_len_str = b''.join(size_octets).decode()
                 msg_len = int(msg_len_str)
             except Exception as e:
                 raise WatermarkError(f"Header invalide: {e}")
+            
             # Lecture du message
-            msg_bits = []
-            for j in range(i, i + msg_len * 8):
-                row = j // w
-                col = j % w
-                msg_bits.append(img[row, col] & 1)
+            msg_bits = all_bits[bit_idx:bit_idx + msg_len * 8]
+            bit_idx += msg_len * 8
+            
             # Lecture du CRC
-            crc_bits = []
-            for j in range(i + msg_len * 8, i + msg_len * 8 + 32):
-                row = j // w
-                col = j % w
-                crc_bits.append(img[row, col] & 1)
+            crc_bits = all_bits[bit_idx:bit_idx + 32]
+            bit_idx += 32
+            
+            if len(msg_bits) < msg_len * 8 or len(crc_bits) < 32:
+                raise WatermarkError("Message ou CRC incomplet")
+                
             msg_bytes = self._bits_to_bytes(msg_bits)
             crc_bytes = self._bits_to_bytes(crc_bits)
+            
             expected_crc = zlib.crc32(self.watermark_marker + b':' + str(msg_len).encode() + b':' + msg_bytes).to_bytes(4, 'big')
+            
             if crc_bytes != expected_crc:
                 raise WatermarkError("CRC invalide - corruption détectée")
-            message = msg_bytes.decode('utf-8')
-            logger.debug(f"LSB: Message extrait ({len(message)} caractères)")
-            return message
-            # Lecture de la taille du message (après le marqueur, jusqu'à ':')
-            size_octets = []
-            colon_found = False
-            i = bit_idx
-            while i < h * w:
-                byte_bits = []
-                for _ in range(8):
-                    if i >= h * w:
-                        break
-                    row = i // w
-                    col = i % w
-                    byte_bits.append(img[row, col] & 1)
-                    i += 1
-                if len(byte_bits) < 8:
-                    break
-                bval = self._bits_to_bytes(byte_bits)
-                if bval == b':':
-                    colon_found = True
-                    break
-                size_octets.append(bval)
-            if not colon_found or not size_octets:
-                raise WatermarkError("Header invalide")
-            try:
-                msg_len_str = b''.join(size_octets).decode()
-                msg_len = int(msg_len_str)
-            except Exception as e:
-                raise WatermarkError(f"Header invalide: {e}")
-            # Lecture du message
-            msg_bits = []
-            for j in range(i, i + msg_len * 8):
-                row = j // w
-                col = j % w
-                msg_bits.append(img[row, col] & 1)
-            # Lecture du CRC
-            crc_bits = []
-            for j in range(i + msg_len * 8, i + msg_len * 8 + 32):
-                row = j // w
-                col = j % w
-                crc_bits.append(img[row, col] & 1)
-            msg_bytes = self._bits_to_bytes(msg_bits)
-            crc_bytes = self._bits_to_bytes(crc_bits)
-            expected_crc = zlib.crc32(self.watermark_marker + b':' + str(msg_len).encode() + b':' + msg_bytes).to_bytes(4, 'big')
-            if crc_bytes != expected_crc:
-                raise WatermarkError("CRC invalide - corruption détectée")
+            
             message = msg_bytes.decode('utf-8')
             logger.debug(f"LSB: Message extrait ({len(message)} caractères)")
             return message
@@ -360,29 +312,26 @@ class Watermark:
             
             bit_idx = 0
             total_bits = len(bits_array)
-            alpha = 20
+            alpha = 40  # Augmenté pour plus de robustesse
             
             for i in range(0, h_pad, 8):
                 for j in range(0, w_pad, 8):
                     if bit_idx >= total_bits:
                         break
                     
-                    block = y_channel[i:i+8, j:j+8].astype(np.float64)
-                    dct_block = self._dct_2d(block)
+                    block = y_channel[i:i+8, j:j+8].astype(np.float32) # Utiliser float32
+                    dct_block = cv2.dct(block)
                     
-                    row, col = 4, 4
+                    row, col = 3, 3 # Utiliser une fréquence plus basse/robuste
                     
                     dct_value = dct_block[row, col]
                     
                     if bits_array[bit_idx] == 1:
-                        if dct_value < 0:
-                            dct_block[row, col] = -alpha if dct_value > -alpha else dct_value
-                        else:
-                            dct_block[row, col] = alpha if dct_value < alpha else dct_value
+                        dct_block[row, col] = alpha
                     else:
-                        dct_block[row, col] = 0 if abs(dct_value) < alpha / 2 else dct_value
+                        dct_block[row, col] = -alpha
                     
-                    idct_block = self._idct_2d(dct_block)
+                    idct_block = cv2.idct(dct_block)
                     y_channel[i:i+8, j:j+8] = np.clip(idct_block, 0, 255).astype(np.uint8)
                     
                     bit_idx += 1
@@ -425,19 +374,19 @@ class Watermark:
             w_pad = (w // 8) * 8
             
             bits = []
-            alpha = 20
+            alpha = 40  # Doit correspondre à l'alpha de embed_dct
             
             for i in range(0, h_pad, 8):
                 for j in range(0, w_pad, 8):
-                    block = y_channel[i:i+8, j:j+8].astype(np.float64)
-                    dct_block = self._dct_2d(block)
+                    block = y_channel[i:i+8, j:j+8].astype(np.float32)
+                    dct_block = cv2.dct(block)
                     
-                    row, col = 4, 4
+                    row, col = 3, 3
                     
                     dct_value = dct_block[row, col]
                     
-                    if abs(dct_value) > alpha / 2:
-                        bits.append(1 if dct_value > 0 else 0)
+                    if dct_value > 0:
+                        bits.append(1)
                     else:
                         bits.append(0)
             
@@ -476,7 +425,7 @@ class Watermark:
     
     def extract(self, image):
         """
-        Extrait le watermark d'une image.
+        Extrait le watermark d'une image en essayant les deux méthodes.
         
         Args:
             image: Image tatoueée
@@ -484,73 +433,95 @@ class Watermark:
         Returns:
             Dict avec les informations extraites
         """
-        if self.method == "LSB":
-            raw_data = self.extract_lsb(image)
-            return self.parse_payload(raw_data.encode('utf-8'))
-        else:
-            bits = self.extract_dct(image)
-            full_bits = bits
-            marker_len = len(self.watermark_marker) * 8
-            
-            marker_found = False
-            data_start = 0
-            for i in range(len(full_bits) - marker_len):
-                check_bits = full_bits[i:i + marker_len]
-                check_bytes = self._bits_to_bytes(check_bits)
-                if check_bytes == self.watermark_marker:
-                    marker_found = True
-                    data_start = i + marker_len
-                    break
-            
-            if not marker_found:
-                raise WatermarkError("Marqueur non trouvé")
-            
-            header_bits = []
-            colon_found = False
-            i = data_start
-            
-            while i < len(full_bits) and not colon_found:
-                byte_bits = full_bits[i:i+8]
-                i += 8
-                if len(byte_bits) < 8:
-                    break
-                bval = self._bits_to_bytes(byte_bits)
-                if bval == b':':
-                    colon_found = True
-                    break
-                header_bits.extend(byte_bits)
-            
-            if not colon_found or not header_bits:
-                raise WatermarkError("Header invalide")
-            
+        methods_to_try = [self.method]
+        other_method = "DCT" if self.method == "LSB" else "LSB"
+        methods_to_try.append(other_method)
+        
+        last_error = None
+        
+        for method in methods_to_try:
             try:
-                msg_len_str = self._bits_to_bytes(header_bits).decode()
-                msg_len = int(msg_len_str)
+                if method == "LSB":
+                    raw_data = self.extract_lsb(image)
+                    return self.parse_payload(raw_data.encode('utf-8'))
+                else:
+                    bits = self.extract_dct(image)
+                    full_bits = bits
+                    marker_len = len(self.watermark_marker) * 8
+                    
+                    marker_found = False
+                    data_start = 0
+                    for i in range(len(full_bits) - marker_len):
+                        check_bits = full_bits[i:i + marker_len]
+                        check_bytes = self._bits_to_bytes(check_bits)
+                        if check_bytes == self.watermark_marker:
+                            marker_found = True
+                            data_start = i + marker_len
+                            break
+                    
+                    if not marker_found:
+                        raise WatermarkError("Marqueur DCT non trouvé")
+                    
+                    # Consommer le premier ':'
+                    i = data_start
+                    first_colon_bits = full_bits[i:i+8]
+                    i += 8
+                    if self._bits_to_bytes(first_colon_bits) != b':':
+                        raise WatermarkError("Header DCT invalide (pas de premier ':')")
+                    
+                    header_bits = []
+                    colon_found = False
+                    
+                    while i < len(full_bits) and not colon_found:
+                        byte_bits = full_bits[i:i+8]
+                        i += 8
+                        if len(byte_bits) < 8:
+                            break
+                        bval = self._bits_to_bytes(byte_bits)
+                        if bval == b':':
+                            colon_found = True
+                            break
+                        header_bits.extend(byte_bits)
+                    
+                    if not colon_found or not header_bits:
+                        raise WatermarkError("Header DCT invalide")
+                    
+                    try:
+                        msg_len_str = self._bits_to_bytes(header_bits).decode()
+                        msg_len = int(msg_len_str)
+                    except Exception as e:
+                        raise WatermarkError(f"Header DCT invalide (taille): {e}")
+                    
+                    total_msg_bits = msg_len * 8
+                    msg_bits = full_bits[i:i + total_msg_bits]
+                    
+                    if len(msg_bits) < total_msg_bits:
+                        raise WatermarkError("Message DCT incomplet")
+                    
+                    msg_bytes = self._bits_to_bytes(msg_bits)
+                    
+                    i += total_msg_bits
+                    crc_bits = full_bits[i:i + 32]
+                    
+                    if len(crc_bits) < 32:
+                        raise WatermarkError("CRC DCT incomplet")
+                    
+                    crc_bytes = self._bits_to_bytes(crc_bits)
+                    
+                    expected_crc = zlib.crc32(self.watermark_marker + b':' + str(msg_len).encode() + b':' + msg_bytes).to_bytes(4, 'big')
+                    
+                    if crc_bytes != expected_crc:
+                        raise WatermarkError("CRC DCT invalide - corruption détectée")
+                    
+                    return self.parse_payload(msg_bytes)
+            except WatermarkError as e:
+                last_error = str(e)
+                continue
             except Exception as e:
-                raise WatermarkError(f"Header invalide: {e}")
-            
-            total_msg_bits = msg_len * 8
-            msg_bits = full_bits[i:i + total_msg_bits]
-            
-            if len(msg_bits) < total_msg_bits:
-                raise WatermarkError("Message incomplet")
-            
-            msg_bytes = self._bits_to_bytes(msg_bits)
-            
-            i += total_msg_bits
-            crc_bits = full_bits[i:i + 32]
-            
-            if len(crc_bits) < 32:
-                raise WatermarkError("CRC incomplet")
-            
-            crc_bytes = self._bits_to_bytes(crc_bits)
-            
-            expected_crc = zlib.crc32(self.watermark_marker + b':' + str(msg_len).encode() + b':' + msg_bytes).to_bytes(4, 'big')
-            
-            if crc_bytes != expected_crc:
-                raise WatermarkError("CRC invalide - corruption détectée")
-            
-            return self.parse_payload(msg_bytes)
+                last_error = str(e)
+                continue
+        
+        raise WatermarkError(last_error or "Extraction échouée pour toutes les méthodes")
     
     def verify_watermark(self, image_path):
         """

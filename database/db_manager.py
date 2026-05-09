@@ -136,6 +136,31 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Erreur lors de la récupération: {e}")
             return []
+
+    def delete_person_by_name(self, name):
+        """Supprime définitivement une personne de la base de données par son nom."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # La suppression dans la table persons entraînera la mise à jour des logs d'accès
+            # grâce à ON DELETE SET NULL définie dans le schéma SQL.
+            cursor.execute("DELETE FROM persons WHERE name = ?", (name,))
+            
+            deleted_count = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            if deleted_count > 0:
+                logger.info(f"Personne '{name}' supprimée définitivement de la base.")
+                return True
+            else:
+                logger.warning(f"Aucune personne trouvée avec le nom '{name}'.")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Erreur lors de la suppression de la personne: {e}")
+            raise
     
     def get_person_encoding(self, person_id):
         """Récupère l'encodage facial d'une personne."""

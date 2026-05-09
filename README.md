@@ -2,42 +2,44 @@
 
 ## Description
 
-Plateforme de surveillance complète pour la détection et reconnaissance faciale en temps réel, avec tatouage numérique des captures pour garantir l'authenticité des preuves.
+Plateforme de surveillance avancée combinant intelligence artificielle pour la reconnaissance faciale et cryptographie pour la protection de l'intégrité des preuves numériques. Le système permet de surveiller un flux vidéo, d'identifier les individus et de générer des captures d'écran certifiées par un tatouage numérique (watermarking) invisible.
 
-## Fonctionnalités
+## Fonctionnalités Clés
 
-- **Détection de visages en temps réel** (Haar Cascade + MTCNN fallback)
-- **Reconnaissance faciale** (LBP + SVM)
-- **Tatouage numérique** (LSB invisible + DCT robuste JPEG)
-- **Gestion des alertes** selon le niveau de menace
-- **Base de données SQLite** pour les logs et personnes
-- **Interface GUI Tkinter** complète
-- **Export CSV** des logs d'accès
+- **Détection de visages Multi-moteur** : Haar Cascade haute performance avec fallback MTCNN pour une précision maximale.
+- **Reconnaissance Faciale Hybride (HOG + LBP + KNN)** :
+    - Utilise les **HOG (Histogram of Oriented Gradients)** pour la structure géométrique.
+    - Utilise les **LBP (Local Binary Patterns)** pour la texture de la peau.
+    - **Alignement Facial Automatique** : Redresse le visage via la position des yeux pour une reconnaissance stable même si la tête est inclinée.
+    - **Filtrage Temporel** : Vote majoritaire sur les 5 dernières frames pour éliminer les confusions fugaces.
+- **Tatouage Numérique de Preuve (Watermarking)** :
+    - **DCT (Discrete Cosine Transform)** : Robuste à la compression JPEG (Q≥75), idéal pour les fichiers légers.
+    - **LSB (Least Significant Bit)** : Invisible et haute capacité, utilisant automatiquement le format PNG sans perte.
+    - **Vérification Intégrée** : Outil d'extraction des métadonnées (Horodatage, Caméra, ID) pour prouver l'authenticité d'une image.
+- **Gestion Intelligente des Alertes** : Différenciation entre accès autorisés (Vert) et non autorisés (Rouge).
+- **Conformité RGPD** : Option de floutage automatique des visages inconnus.
 
 ## Structure du Projet
 
 ```
 surveillance_platform/
 ├── main.py                    # Point d'entrée
-├── config.py                  # Paramètres globaux
-├── requirements.txt          # Dépendances
+├── config.py                  # Paramètres globaux (Seuils, méthodes, chemins)
+├── requirements.txt          # Dépendances Python
 ├── core/
-│   ├── detector.py            # Détection visages
-│   ├── recognizer.py          # Reconnaissance faciale
-│   ├── watermark.py           # Tatouage LSB/DCT
-│   └── alert_manager.py       # Gestion alertes
+│   ├── detector.py            # Moteurs de détection visages
+│   ├── recognizer.py          # Intelligence : HOG+LBP, KNN, Alignement
+│   ├── watermark.py           # Sécurité : Algorithmes DCT et LSB (fenêtre glissante)
+│   └── alert_manager.py       # Logique de sauvegarde et alertes
 ├── database/
 │   ├── db_manager.py          # Interface SQLite
-│   └── schema.sql             # Schéma BDD
+│   └── schema.sql             # Définition des tables (persons, logs)
 ├── gui/
-│   ├── main_window.py         # Fenêtre principale
-│   ├── enrollment_dialog.py   # Enregistrement personne
-│   └── verification_dialog.py # Vérification tatouage
-├── utils/
-│   ├── logger.py              # Journalisation
-│   └── image_utils.py         # Utilitaires image
-├── data/                      # Données (BDD, captures)
-└── tests/                    # Tests unitaires
+│   ├── main_window.py         # Interface de surveillance principale
+│   ├── enrollment_dialog.py   # Gestion de l'enregistrement et suppression
+│   └── verification_dialog.py # Analyseur d'intégrité des captures
+├── data/                      # Stockage (DB, modèles .pkl, captures)
+└── utils/                     # Journalisation et utilitaires image
 ```
 
 ## Installation
@@ -47,89 +49,40 @@ pip install -r requirements.txt
 ```
 
 ### Dépendances principales
-
-- opencv-python >= 4.8.0
-- numpy >= 1.24.0
-- scikit-learn >= 1.3.0
-- scikit-image >= 0.21.0
-- scipy >= 1.11.0
-- Pillow >= 10.0.0
-- mtcnn >= 0.1.1
-- tensorflow >= 2.13.0
-- pygame >= 2.5.0
-
-## Lancement
-
-```bash
-python main.py
-```
+- `opencv-python` : Traitement d'image et vidéo.
+- `scikit-image` : Extraction de caractéristiques HOG/LBP.
+- `scikit-learn` : Classification KNN et SVM.
+- `numpy` & `scipy` : Calculs matriciels et transformées DCT.
 
 ## Utilisation
 
-### 1. Enregistrer une personne
+### 1. Enregistrement Optimal
+1. Menu → Base de données → Enregistrer une personne.
+2. Capturez 10 photos en restant bien face à la caméra pour l'alignement initial.
+3. Le système entraîne automatiquement un modèle KNN dès que 2 personnes sont présentes.
 
-1. Menu → Base de données → Enregistrer une personne
-2. Entrez le nom et cochez "Autorisé" si nécessaire
-3. Cliquez sur "Démarrer Webcam"
-4. Cliquez sur "Capturer" 10 fois pour enregistrer le visage
-5. Cliquez sur "Enregistrer & Entraîner"
+### 2. Surveillance et Preuve
+1. Cliquez sur **Webcam**. Le système affiche le nom et le statut en temps réel.
+2. Cliquez sur **Capturer** pour générer une preuve tatouée.
+3. Le format de fichier (.jpg ou .png) est géré automatiquement selon la méthode de tatouage choisie.
 
-### 2. Surveillance
+### 3. Vérification de Preuve
+1. Menu → Outils → Vérifier Tatouage.
+2. Sélectionnez une image dans `data/captures`.
+3. Le système extrait les données cachées et valide le CRC pour prouver qu'aucune modification n'a été faite.
 
-1. Cliquez sur "Démarrer Webcam" ou "Ouvrir Vidéo"
-2. Les visages sont automatiquement détectés et reconnus
-3. Les captures sont tatouées et sauvegardées
+## Paramètres (config.py)
 
-### 3. Vérifier un tatouage
+- `RECOGNITION_THRESHOLD` : Ajusté à **0.35** pour l'algorithme hybride.
+- `WATERMARK_METHOD` : "DCT" (robuste) ou "LSB" (invisible).
+- `FACE_SIZE` : **160x160** pour une analyse HOG précise.
 
-1. Menu → Outils → Vérifier Tatouage
-2. Ouvrez une image capturée
-3. Visualisez les informations extraites
+## Sécurité et Authentification
 
+Le système garantit l'intégrité via :
+- **CRC32** : Vérifie que le message caché n'a pas été corrompu.
+- **Marqueur de Synchronisation** : Recherche par fenêtre glissante pour retrouver le tatouage même après un léger recadrage.
+- **Noyau Linéaire/KNN** : Séparation stricte des profils pour éviter l'usurpation d'identité.
 
-
-## Paramètres
-
-Modifiez `config.py` pour personnaliser :
-
-- `TARGET_FPS`: FPS cible (défaut: 15)
-- `RECOGNITION_THRESHOLD`: Seuil de reconnaissance (défaut: 0.6)
-- `WATERMARK_METHOD`: "LSB" ou "DCT"
-- `GDPR_MODE`: Si True, floute les visages inconnus
-
-## Méthodes de Tatouage
-
-### LSB (Least Significant Bit)
-
-- Insertion invisible dans les bits de poids faible
-- Capacité: ~25% de la taille de l'image
-- Non robuste à la compression JPEG
-
-### DCT (Discrete Cosine Transform)
-
-- Insertion robuste dans les coefficients DCT
-- Résiste à la compression JPEG (Q≥75)
-- Taux d'erreur (BER) cible < 10%
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                    GUI Tkinter                       │
-├─────────────────────────────────────────────────────┤
-│                                                     │
-│  ┌─────────┐  ┌──────────┐  ┌──────────┐          │
-│  │Detector │→ │Recognizer│→ │Watermark │→ Alert   │
-│  └─────────┘  └──────────┘  └──────────┘          │
-│      ↓            ↓            ↓                    │
-│  ┌──────────────────────────────────���──┐          │
-│  │          Database Manager           │          │
-│  │          (SQLite)                   │          │
-│  └─────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────┘
-```
-
-## Conformité RGPD
-
-Activez le mode RGPD dans `config.py` (`GDPR_MODE = True`) pour automatiquement flouter les visages non reconnus.
-
+---
+*Développé pour la surveillance intelligente et la certification de preuves numériques.*

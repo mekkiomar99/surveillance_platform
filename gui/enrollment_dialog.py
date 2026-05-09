@@ -106,7 +106,11 @@ class EnrollmentDialog:
         result = self.db_manager.delete_person_by_name(name)
         if result:
             self.status.config(text=f"{name} supprimé!", fg='#ff8800')
-            messagebox.showinfo("Succès", f"{name} supprimé!")
+            
+            # Réentraînement ou suppression du modèle si plus assez de données
+            self.recognizer.train(self.db_manager)
+            
+            messagebox.showinfo("Succès", f"{name} supprimé définitivement!")
             self.name_entry.delete(0, tk.END)
         else:
             messagebox.showerror("Erreur", f"Impossible de supprimer {name} (non trouvé)")
